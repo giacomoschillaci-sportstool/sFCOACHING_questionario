@@ -69,13 +69,82 @@ async function avvia(){
   };
 }
 
+let statoQuestionario = null;   // {questionario, domande, indice, risposte, token}
+
+async function caricaQuestionarioAttivo(){
+  const { data: questionari } = await sb.from('questionari').select('*');
+  const questionario = questionari[0];
+  const { data: tutteLeDomande } = await sb.from('domande').select('*');
+  const perId = Object.fromEntries(tutteLeDomande.map(d => [d.id, d]));
+  const domande = questionario.domande_ids.map(id => perId[id]).filter(d => d && d.attiva !== false);
+  return { questionario, domande };
+}
+
+function domandaVisibile(domanda, risposteFinora){
+  if (!domanda.condizione) return true;
+  const valoreDato = risposteFinora[domanda.condizione.domanda_id];
+  if (valoreDato == null) return false;
+  return String(valoreDato).toLowerCase() === String(domanda.condizione.valore).toLowerCase();
+}
+
+function prossimaDomandaVisibile(){
+  const { domande, indice, risposte } = statoQuestionario;
+  let i = indice;
+  while (i < domande.length && !domandaVisibile(domande[i], risposte)) i++;
+  return i;
+}
+
 async function mostraQuestionario(token){
-  // Il contenuto vero (domande, logica condizionale, invio) arriva nei
-  // Task 5 e 6. Per ora un placeholder minimo, sufficiente a verificare
-  // che l'accesso funzioni.
   const box = document.getElementById('questionario');
   box.hidden = false;
-  box.innerHTML = '<div class="card"><p>Accesso confermato. Il questionario di oggi arriva nel prossimo passo.</p></div>';
+
+  const { questionario, domande } = await caricaQuestionarioAttivo();
+  statoQuestionario = { questionario, domande, indice: 0, risposte: {}, token };
+  statoQuestionario.indice = prossimaDomandaVisibile();
+  renderDomanda();
+}
+
+function renderDomanda(){
+  const box = document.getElementById('questionario');
+  const { domande, indice } = statoQuestionario;
+
+  if (indice >= domande.length){
+    inviaRisposteRaccolte();
+    return;
+  }
+
+  const d = domande[indice];
+  let campo = '';
+  if (d.tipo === 'scelta'){
+    campo = (d.opzioni || []).map(o => `<button class="btn" data-valore="${o}">${o}</button>`).join(' ');
+  } else if (d.tipo === 'si_no'){
+    campo = `<button class="btn" data-valore="sì">Sì</button> <button class="btn" data-valore="no">No</button>`;
+  } else if (d.tipo === 'testo'){
+    campo = `<input type="text" id="campoRisposta"><p><button class="btn primary" id="bAvanti">Avanti</button></p>`;
+  } else if (d.tipo === 'numero'){
+    campo = `<input type="number" id="campoRisposta"><p><button class="btn primary" id="bAvanti">Avanti</button></p>`;
+  } else if (d.tipo === 'scala_rpe' || d.tipo === 'scala_prs'){
+    const { min, max, ancore } = d.opzioni || { min: 0, max: 10, ancore: {} };
+    const bottoni = [];
+    for (let n = min; n <= max; n++) bottoni.push(`<button data-valore="${n}">${n}</button>`);
+    campo = `<div class="scala">${bottoni.join('')}</div>`;
+    if (ancore) campo += `<div class="ancora">${Object.entries(ancore).map(([n,t]) => `${n}: ${t}`).join(' · ')}</div>`;
+  }
+
+  box.innerHTML = `<div class="card"><p>${d.testo}</p>${campo}</div>`;
+
+  box.querySelectorAll('[data-valore]').forEach(b => b.onclick = () => rispondi(b.dataset.valore));
+  const bAvanti = document.getElementById('bAvanti');
+  if (bAvanti) bAvanti.onclick = () => rispondi(document.getElementById('campoRisposta').value);
+}
+
+function rispondi(valore){
+  const { domande, indice } = statoQuestionario;
+  const d = domande[indice];
+  statoQuestionario.risposte[d.id] = valore;
+  statoQuestionario.indice = indice + 1;
+  statoQuestionario.indice = prossimaDomandaVisibile();
+  renderDomanda();
 }
 
 avvia();

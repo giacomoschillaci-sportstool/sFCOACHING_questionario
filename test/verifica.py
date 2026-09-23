@@ -111,6 +111,78 @@ def email_sbagliata_mostra_errore_e_non_ricorda_nulla(pagina, contesto):
     assert pagina.locator("#questionario").is_hidden()
 
 
+FINGI_SUPABASE_CONDIZIONALE = """
+  window.__rpc = [];
+  window.__domandeProva = [
+    {id:'d1', testo:'Quante ore hai dormito?', tipo:'scelta', opzioni:['Poco','Bene'], condizione:null, attiva:true},
+    {id:'d2', testo:'Hai dolori?', tipo:'si_no', opzioni:null, condizione:null, attiva:true},
+    {id:'d3', testo:'Descrivi i dolori', tipo:'testo', opzioni:null,
+     condizione:{domanda_id:'d2', valore:'sì'}, attiva:true},
+    {id:'d4', testo:'Ti senti pronto per allenarti oggi?', tipo:'si_no', opzioni:null, condizione:null, attiva:true}
+  ];
+  window.__questionarioProva = {id:'q1', nome:'Prova', domande_ids:['d1','d2','d3','d4']};
+  window.supabase = { createClient: () => ({
+    rpc: (nome, args) => {
+      window.__rpc.push({nome, args});
+      if (nome === 'verifica_atleta')
+        return Promise.resolve({data:[{id:'a1', nome:'Atleta Prova'}], error:null});
+      if (nome === 'invia_risposta') return Promise.resolve({data:null, error:null});
+      if (nome === 'storico_risposte') return Promise.resolve({data:[], error:null});
+      return Promise.resolve({data:null, error:null});
+    },
+    from: (tabella) => ({
+      select: () => Promise.resolve({
+        data: tabella === 'domande' ? window.__domandeProva : [window.__questionarioProva], error:null })
+    })
+  })};
+"""
+
+
+# I click sui bottoni sono sempre scoped dentro #questionario: "text=No" da solo
+# è ambiguo perché intercetta anche l'h1 "Questionario mattutino" (contiene "no"
+# dentro "mattutino", e text= non quotato fa match per sottostringa, case-insensitive).
+
+
+@controllo
+def il_questionario_salta_la_domanda_condizionata_se_non_serve(pagina, contesto):
+    pagina.add_init_script(FINGI_SUPABASE_CONDIZIONALE)
+    pagina.goto((RADICE / "index.html").as_uri() + "?t=token-valido")
+    pagina.wait_for_timeout(300)
+    pagina.fill("#campoEmail", "atleta@test.invalid")
+    pagina.click("#bVerifica")
+    pagina.wait_for_timeout(300)
+
+    # prima domanda: scelta
+    assert "dormito" in pagina.locator("#questionario").inner_text().lower()
+    pagina.click("#questionario >> text=Bene")
+    pagina.wait_for_timeout(200)
+
+    # seconda: sì/no, rispondo "no" -> la terza (condizionata a "sì") va saltata
+    assert "dolori" in pagina.locator("#questionario").inner_text().lower()
+    pagina.click("#questionario >> text=No")
+    pagina.wait_for_timeout(200)
+
+    # non deve chiedere "descrivi i dolori": deve essere già sulla quarta domanda
+    testo = pagina.locator("#questionario").inner_text().lower()
+    assert "descrivi i dolori" not in testo, testo
+    assert "pronto per allenarti" in testo, testo
+
+
+@controllo
+def il_questionario_chiede_la_domanda_condizionata_se_serve(pagina, contesto):
+    pagina.add_init_script(FINGI_SUPABASE_CONDIZIONALE)
+    pagina.goto((RADICE / "index.html").as_uri() + "?t=token-valido")
+    pagina.wait_for_timeout(300)
+    pagina.fill("#campoEmail", "atleta@test.invalid")
+    pagina.click("#bVerifica")
+    pagina.wait_for_timeout(300)
+    pagina.click("#questionario >> text=Bene")
+    pagina.wait_for_timeout(200)
+    pagina.click("#questionario >> text=Sì")
+    pagina.wait_for_timeout(200)
+    assert "descrivi i dolori" in pagina.locator("#questionario").inner_text().lower()
+
+
 def main(nomi):
     scelti = [c for c in CONTROLLI if not nomi or c.__name__ in nomi]
     falliti = 0

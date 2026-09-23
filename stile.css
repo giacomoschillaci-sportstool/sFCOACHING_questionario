@@ -1,0 +1,25 @@
+:root{
+  --bg:#0C1620; --panel:#13232F; --panel-2:#182D3B; --line:#223D4E; --ink:#E8F0F4;
+  --ink-2:#B9C7D0; --ink-3:#7E93A0;
+  --z1:#63808F; --z2:#3FA8C4; --z3:#E8A33D; --z4:#E0507F;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Archivo,system-ui,sans-serif;
+  font-variant-numeric:tabular-nums}
+.wrap{max-width:560px;margin:0 auto;padding:24px 16px 60px}
+h1{font-size:18px;margin:0 0 20px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px;margin-bottom:16px}
+label{display:block;font-size:13px;color:var(--ink-2);margin-bottom:6px}
+input[type=text],input[type=email],input[type=number]{
+  width:100%;padding:10px 12px;background:var(--panel-2);border:1px solid var(--line);
+  border-radius:6px;color:var(--ink);font-size:15px;font-family:inherit}
+.btn{padding:10px 18px;border-radius:6px;border:1px solid var(--line);background:var(--panel-2);
+  color:var(--ink);font-size:14px;cursor:pointer}
+.btn.primary{background:var(--z2);border-color:var(--z2);color:#04121A;font-weight:600}
+.errore{color:var(--z4);font-size:13px;margin-top:8px}
+.scala{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+.scala button{flex:1;min-width:34px;padding:10px 0;border-radius:6px;border:1px solid var(--line);
+  background:var(--panel-2);color:var(--ink);cursor:pointer}
+.scala button.scelto{background:var(--z2);border-color:var(--z2);color:#04121A;font-weight:600}
+.ancora{font-size:11px;color:var(--ink-3);margin-top:4px}
+[hidden]{display:none!important}

@@ -98,10 +98,40 @@ async function mostraQuestionario(token){
   const box = document.getElementById('questionario');
   box.hidden = false;
 
+  const oggi = new Date().toISOString().slice(0, 10);
+  const { data: storico } = await sb.rpc('storico_risposte', { p_token: token, p_da: oggi, p_a: oggi });
+  const rispostaDiOggi = (storico || []).find(r => r.data === oggi);
+
+  if (rispostaDiOggi){
+    box.innerHTML = `<div class="card"><p>Hai già risposto oggi. Grazie!</p></div>`;
+    return;
+  }
+
   const { questionario, domande } = await caricaQuestionarioAttivo();
   statoQuestionario = { questionario, domande, indice: 0, risposte: {}, token };
   statoQuestionario.indice = prossimaDomandaVisibile();
   renderDomanda();
+}
+
+async function inviaRisposteRaccolte(){
+  const box = document.getElementById('questionario');
+  const { questionario, risposte, token } = statoQuestionario;
+  const oggi = new Date().toISOString().slice(0, 10);
+
+  box.innerHTML = `<div class="card"><p>Invio in corso…</p></div>`;
+  const { error } = await sb.rpc('invia_risposta', {
+    p_token: token, p_questionario_id: questionario.id, p_data: oggi, p_risposte: risposte });
+
+  if (error){
+    // Il testo digitato resta in `statoQuestionario.risposte`, nulla si perde:
+    // basta far ripremere l'invio.
+    box.innerHTML = `<div class="card"><p class="errore">Invio non riuscito, controlla la connessione.</p>
+      <p><button class="btn primary" id="bRiprova">Riprova</button></p></div>`;
+    document.getElementById('bRiprova').onclick = inviaRisposteRaccolte;
+    return;
+  }
+
+  box.innerHTML = `<div class="card"><p>Risposta inviata. Grazie!</p></div>`;
 }
 
 function renderDomanda(){

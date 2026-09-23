@@ -183,6 +183,47 @@ def il_questionario_chiede_la_domanda_condizionata_se_serve(pagina, contesto):
     assert "descrivi i dolori" in pagina.locator("#questionario").inner_text().lower()
 
 
+FINGI_SUPABASE_GIA_RISPOSTO = FINGI_SUPABASE.replace(
+    "if (nome === 'storico_risposte') return Promise.resolve({data:[], error:null});",
+    """if (nome === 'storico_risposte') return Promise.resolve({data:[
+         {id:'r1', data: new Date().toISOString().slice(0,10),
+          risposte:{d1:'sì'}, creato_il:new Date().toISOString()}
+       ], error:null});"""
+)
+
+
+@controllo
+def se_ha_gia_risposto_oggi_mostra_sola_lettura(pagina, contesto):
+    pagina.add_init_script(FINGI_SUPABASE_GIA_RISPOSTO)
+    pagina.goto((RADICE / "index.html").as_uri() + "?t=token-valido")
+    pagina.wait_for_timeout(300)
+    pagina.fill("#campoEmail", "atleta@test.invalid")
+    pagina.click("#bVerifica")
+    pagina.wait_for_timeout(300)
+
+    testo = pagina.locator("#questionario").inner_text().lower()
+    assert "già" in testo or "oggi" in testo, testo
+    assert pagina.locator("[data-valore]").count() == 0, "non deve mostrare un modulo compilabile"
+
+
+@controllo
+def completare_il_questionario_lo_invia(pagina, contesto):
+    # FINGI_SUPABASE (Task 4) ha una sola domanda ('d1', sì/no): un click la completa.
+    pagina.add_init_script(FINGI_SUPABASE)
+    pagina.goto((RADICE / "index.html").as_uri() + "?t=token-valido")
+    pagina.wait_for_timeout(300)
+    pagina.fill("#campoEmail", "atleta@test.invalid")
+    pagina.click("#bVerifica")
+    pagina.wait_for_timeout(300)
+    pagina.click("text=Sì")
+    pagina.wait_for_timeout(300)
+
+    chiamate = pagina.evaluate("() => window.__rpc.filter(r => r.nome === 'invia_risposta')")
+    assert len(chiamate) == 1, chiamate
+    assert chiamate[0]["args"]["p_risposte"]["d1"] == "sì", chiamate
+    assert "inviat" in pagina.locator("#questionario").inner_text().lower()
+
+
 def main(nomi):
     scelti = [c for c in CONTROLLI if not nomi or c.__name__ in nomi]
     falliti = 0

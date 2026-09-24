@@ -27,9 +27,20 @@ function segnaDispositivoVerificato(token){
 }
 
 async function verificaEmail(token, email){
-  const { data, error } = await sb.rpc('verifica_atleta', { p_token: token, p_email: email });
-  if (error || !data || data.length === 0) return null;
-  return data[0];   // {id, nome}
+  // Il contratto distingue "non trovato perché l'email non corrisponde" da
+  // "non trovato perché la chiamata è fallita" (rete assente, Supabase giù):
+  // sono due situazioni diverse per l'atleta, che merita un messaggio onesto
+  // e non "email non riconosciuta" quando il problema è solo la connessione.
+  let risposta;
+  try {
+    risposta = await sb.rpc('verifica_atleta', { p_token: token, p_email: email });
+  } catch (e) {
+    return { trovato: false, erroreRete: true };
+  }
+  const { data, error } = risposta;
+  if (error) return { trovato: false, erroreRete: true };
+  if (!data || data.length === 0) return { trovato: false, erroreRete: false };
+  return { trovato: true, atleta: data[0] };   // atleta: {id, nome}
 }
 
 function mostraErrore(testo){
@@ -57,9 +68,11 @@ async function avvia(){
     erroreEmail.hidden = true;
     if (!email){ erroreEmail.textContent = 'Scrivi la tua email.'; erroreEmail.hidden = false; return; }
 
-    const atleta = await verificaEmail(token, email);
-    if (!atleta){
-      erroreEmail.textContent = 'Email non riconosciuta per questo link.';
+    const esito = await verificaEmail(token, email);
+    if (!esito.trovato){
+      erroreEmail.textContent = esito.erroreRete
+        ? "Non riesco a verificare l'email: controlla la connessione e riprova."
+        : 'Email non riconosciuta per questo link.';
       erroreEmail.hidden = false;
       return;
     }
@@ -72,9 +85,20 @@ async function avvia(){
 let statoQuestionario = null;   // {questionario, domande, indice, risposte, token}
 
 async function caricaQuestionarioAttivo(){
-  const { data: questionari } = await sb.from('questionari').select('*');
+  // Senza controlli, un errore Supabase o un questionario mancante lascia
+  // `questionari[0]` undefined e la riga sotto va in eccezione non gestita:
+  // la pagina resta vuota, senza modo di capire cosa è successo. Qui invece
+  // solleviamo un errore esplicito che il chiamante (mostraQuestionario)
+  // trasforma in un messaggio leggibile.
+  const { data: questionari, error: erroreQuestionari } = await sb.from('questionari').select('*');
+  if (erroreQuestionari || !questionari || questionari.length === 0){
+    throw new Error('nessun questionario disponibile');
+  }
   const questionario = questionari[0];
-  const { data: tutteLeDomande } = await sb.from('domande').select('*');
+  const { data: tutteLeDomande, error: erroreDomande } = await sb.from('domande').select('*');
+  if (erroreDomande || !tutteLeDomande){
+    throw new Error('domande non disponibili');
+  }
   const perId = Object.fromEntries(tutteLeDomande.map(d => [d.id, d]));
   const domande = questionario.domande_ids.map(id => perId[id]).filter(d => d && d.attiva !== false);
   return { questionario, domande };
@@ -99,18 +123,33 @@ async function mostraQuestionario(token){
   box.hidden = false;
 
   const oggi = new Date().toISOString().slice(0, 10);
-  const { data: storico } = await sb.rpc('storico_risposte', { p_token: token, p_da: oggi, p_a: oggi });
-  const rispostaDiOggi = (storico || []).find(r => r.data === oggi);
+  let rispostaDiOggi = null;
+  try {
+    const { data: storico, error } = await sb.rpc('storico_risposte', { p_token: token, p_da: oggi, p_a: oggi });
+    if (error) throw error;
+    rispostaDiOggi = (storico || []).find(r => r.data === oggi);
+  } catch (e) {
+    // Se lo storico non si legge (rete assente, Supabase giù) non blocchiamo
+    // l'atleta: si comporta come se non avesse ancora risposto oggi. Nel
+    // caso peggiore risponde due volte, ma invia_risposta aggiorna la
+    // risposta del giorno invece di duplicarla (vincolo unique atleta+data),
+    // quindi non è pericoloso — solo silenzioso, come da disegno originale.
+    rispostaDiOggi = null;
+  }
 
   if (rispostaDiOggi){
     box.innerHTML = `<div class="card"><p>Hai già risposto oggi. Grazie!</p></div>`;
     return;
   }
 
-  const { questionario, domande } = await caricaQuestionarioAttivo();
-  statoQuestionario = { questionario, domande, indice: 0, risposte: {}, token };
-  statoQuestionario.indice = prossimaDomandaVisibile();
-  renderDomanda();
+  try {
+    const { questionario, domande } = await caricaQuestionarioAttivo();
+    statoQuestionario = { questionario, domande, indice: 0, risposte: {}, token };
+    statoQuestionario.indice = prossimaDomandaVisibile();
+    renderDomanda();
+  } catch (e) {
+    box.innerHTML = `<div class="card"><p class="errore">Non riesco a caricare la pagina. Controlla la connessione e ricarica.</p></div>`;
+  }
 }
 
 async function inviaRisposteRaccolte(){

@@ -224,6 +224,74 @@ def completare_il_questionario_lo_invia(pagina, contesto):
     assert "inviat" in pagina.locator("#questionario").inner_text().lower()
 
 
+FINGI_SUPABASE_QUESTIONARIO_ROTTO = """
+  window.__rpc = [];
+  window.supabase = { createClient: () => ({
+    rpc: (nome, args) => {
+      window.__rpc.push({nome, args});
+      if (nome === 'verifica_atleta')
+        return Promise.resolve({data:[{id:'a1', nome:'Atleta Prova'}], error:null});
+      if (nome === 'storico_risposte') return Promise.resolve({data:[], error:null});
+      return Promise.resolve({data:null, error:null});
+    },
+    from: (tabella) => ({
+      select: () => tabella === 'questionari'
+        ? Promise.resolve({data:null, error:{message:'boom'}})
+        : Promise.resolve({data:[], error:null})
+    })
+  })};
+"""
+
+
+@controllo
+def questionario_non_disponibile_mostra_errore_non_pagina_vuota(pagina, contesto):
+    # caricaQuestionarioAttivo() fallisce (la select su 'questionari' torna un
+    # errore): prima del fix la riga successiva leggeva questionari[0] su
+    # undefined e la pagina restava vuota, con #questionario visibile ma
+    # senza contenuto. Ora deve mostrare una card di errore onesta.
+    pagina.add_init_script(FINGI_SUPABASE_QUESTIONARIO_ROTTO)
+    pagina.goto((RADICE / "index.html").as_uri() + "?t=token-valido")
+    pagina.wait_for_timeout(300)
+    pagina.fill("#campoEmail", "atleta@test.invalid")
+    pagina.click("#bVerifica")
+    pagina.wait_for_timeout(300)
+
+    assert not pagina.locator("#questionario").is_hidden()
+    testo = pagina.locator("#questionario").inner_text().lower()
+    assert "controlla la connessione" in testo, f"pagina senza messaggio d'errore: {testo!r}"
+    assert pagina.locator("[data-valore]").count() == 0, "non deve mostrare un modulo, il questionario non si è caricato"
+
+
+FINGI_SUPABASE_RETE_ROTTA = """
+  window.__rpc = [];
+  window.supabase = { createClient: () => ({
+    rpc: (nome, args) => {
+      window.__rpc.push({nome, args});
+      if (nome === 'verifica_atleta') return Promise.reject(new TypeError('rete non disponibile'));
+      return Promise.resolve({data:null, error:null});
+    },
+    from: () => ({ select: () => Promise.resolve({data: [], error: null}) })
+  })};
+"""
+
+
+@controllo
+def email_con_errore_di_rete_non_dice_email_non_riconosciuta(pagina, contesto):
+    # verifica_atleta fallisce per un motivo di rete (non perché l'email è
+    # sbagliata): il messaggio deve dirlo, non spacciare un errore di rete
+    # per "email non riconosciuta".
+    pagina.add_init_script(FINGI_SUPABASE_RETE_ROTTA)
+    pagina.goto((RADICE / "index.html").as_uri() + "?t=token-valido")
+    pagina.wait_for_timeout(300)
+    pagina.fill("#campoEmail", "atleta@test.invalid")
+    pagina.click("#bVerifica")
+    pagina.wait_for_timeout(300)
+    assert not pagina.locator("#erroreEmail").is_hidden()
+    testo = pagina.locator("#erroreEmail").inner_text().lower()
+    assert "non riconosciuta" not in testo, testo
+    assert "connessione" in testo, testo
+
+
 def main(nomi):
     scelti = [c for c in CONTROLLI if not nomi or c.__name__ in nomi]
     falliti = 0

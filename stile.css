@@ -17,9 +17,8 @@ input[type=text],input[type=email],input[type=number]{
   color:var(--ink);font-size:14px;cursor:pointer}
 .btn.primary{background:var(--z2);border-color:var(--z2);color:#04121A;font-weight:600}
 .errore{color:var(--z4);font-size:13px;margin-top:8px}
-.scala{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
-.scala button{flex:1;min-width:34px;padding:10px 0;border-radius:6px;border:1px solid var(--line);
-  background:var(--panel-2);color:var(--ink);cursor:pointer}
-.scala button.scelto{background:var(--z2);border-color:var(--z2);color:#04121A;font-weight:600}
-.ancora{font-size:11px;color:var(--ink-3);margin-top:4px}
+.scalaImg{display:block;width:100%;max-width:420px;height:auto;margin:10px 0;border-radius:6px;background:#fff}
+.istruzioni{margin:8px 0;font-size:13px;color:var(--ink-3)}
+.istruzioni summary{cursor:pointer;color:var(--ink-2)}
+.istruzioni p{margin:8px 0}
 [hidden]{display:none!important}

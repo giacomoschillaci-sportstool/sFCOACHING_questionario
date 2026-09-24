@@ -292,6 +292,94 @@ def email_con_errore_di_rete_non_dice_email_non_riconosciuta(pagina, contesto):
     assert "connessione" in testo, testo
 
 
+# Stessa forma di `opzioni` che il database ha per RPE e QGR10 (migrazione 0005
+# di sFCOACHING): immagine originale del coach, intervallo, istruzioni.
+FINGI_SUPABASE_SCALE = FINGI_SUPABASE.replace(
+    "window.__domandeProva = [{id:'d1', testo:'Come va?', tipo:'si_no', opzioni:null, condizione:null, attiva:true}];",
+    "window.__domandeProva = ["
+    "{id:'rpe', testo:'RPE', tipo:'scala_rpe', condizione:null, attiva:true,"
+    "  opzioni:{min:0, max:12, immagine:'immagini/rpe_cr10.png', alt:'Scala CR10 di Borg',"
+    "           istruzioni:['Istruzione uno <b>non grassetto</b>', 'Istruzione due']}},"
+    "{id:'qgr', testo:'QGR', tipo:'scala_prs', condizione:null, attiva:true,"
+    "  opzioni:{min:0, max:10, immagine:'immagini/qgr10.png', alt:'Scala QGR10', istruzioni:['Istr']}}];",
+).replace("domande_ids:['d1']", "domande_ids:['rpe','qgr']")
+
+
+def _fino_alla_prima_scala(pagina):
+    pagina.add_init_script(FINGI_SUPABASE_SCALE)
+    pagina.goto((RADICE / "index.html").as_uri() + "?t=token-valido")
+    pagina.wait_for_timeout(300)
+    pagina.fill("#campoEmail", "atleta@test.invalid")
+    pagina.click("#bVerifica")
+    pagina.wait_for_timeout(400)
+
+
+@controllo
+def le_scale_mostrano_le_immagini_originali_e_le_istruzioni(pagina, contesto):
+    _fino_alla_prima_scala(pagina)
+    img = pagina.locator("#questionario img.scalaImg")
+    assert img.count() == 1
+    assert img.get_attribute("src") == "immagini/rpe_cr10.png"
+    # l'immagine deve davvero caricarsi (file presente, PNG valido)
+    assert pagina.evaluate("() => document.querySelector('img.scalaImg').naturalWidth") > 500
+    # nessun bottone numerico ricostruito: solo il campo dove scrivere il numero
+    assert pagina.locator("#questionario [data-valore]").count() == 0
+    assert pagina.locator("#questionario details.istruzioni").count() == 1
+    # il testo delle istruzioni è testo, non HTML
+    assert "<b>non grassetto</b>" in pagina.locator("details.istruzioni").text_content()
+    assert pagina.locator("details.istruzioni b").count() == 0
+
+
+@controllo
+def la_scala_accetta_decimali_con_virgola_e_oltre_il_10_per_la_rpe(pagina, contesto):
+    _fino_alla_prima_scala(pagina)
+    pagina.fill("#campoRisposta", "11,5")          # oltre 10, con la virgola
+    pagina.click("#bAvanti")
+    pagina.wait_for_timeout(300)
+    # seconda scala: QGR10, immagine diversa, decimale con il punto
+    assert pagina.locator("#questionario img.scalaImg").get_attribute("src") == "immagini/qgr10.png"
+    assert pagina.evaluate("() => document.querySelector('img.scalaImg').naturalWidth") > 500
+    pagina.fill("#campoRisposta", "6.8")
+    pagina.click("#bAvanti")
+    pagina.wait_for_timeout(300)
+    chiamate = pagina.evaluate("() => window.__rpc.filter(r => r.nome === 'invia_risposta')")
+    assert len(chiamate) == 1, chiamate
+    r = chiamate[0]["args"]["p_risposte"]
+    assert r["rpe"] == 11.5 and r["qgr"] == 6.8, r      # numeri, non stringhe
+
+
+@controllo
+def la_scala_rifiuta_valori_fuori_campo_vuoti_o_non_numerici(pagina, contesto):
+    _fino_alla_prima_scala(pagina)
+    for cattivo in ["", "   ", "abc", "13", "-1", "1,2,3", "12,5"]:
+        pagina.fill("#campoRisposta", cattivo)
+        pagina.click("#bAvanti")
+        pagina.wait_for_timeout(150)
+        assert not pagina.locator("#erroreScala").is_hidden(), f"nessun errore per {cattivo!r}"
+        assert pagina.locator("#questionario img.scalaImg").get_attribute("src") == "immagini/rpe_cr10.png",             f"{cattivo!r} ha fatto avanzare la domanda"
+    # i limiti stessi sono validi: 12 (massimo della CR10) fa avanzare alla QGR10
+    pagina.fill("#campoRisposta", "12")
+    pagina.click("#bAvanti")
+    pagina.wait_for_timeout(200)
+    assert pagina.locator("#questionario img.scalaImg").get_attribute("src") == "immagini/qgr10.png"
+    # 0 è un valore valido, non 'vuoto'
+    pagina.fill("#campoRisposta", "0")
+    pagina.click("#bAvanti")
+    pagina.wait_for_timeout(300)
+    r = pagina.evaluate("() => window.__rpc.filter(r => r.nome === 'invia_risposta')")
+    assert len(r) == 1 and r[0]["args"]["p_risposte"]["rpe"] == 12 and r[0]["args"]["p_risposte"]["qgr"] == 0, r
+
+
+@controllo
+def le_immagini_delle_scale_sono_i_file_originali(pagina, contesto):
+    # il coach le ha fornite come PDF: se qualcuno le sostituisce, questo lo dice
+    for nome in ("rpe_cr10.png", "qgr10.png"):
+        f = RADICE / "immagini" / nome
+        dati = f.read_bytes()
+        assert dati[1:4] == b"PNG" and dati[0] == 0x89, f"{nome} non è un PNG"
+        assert len(dati) > 50_000, f"{nome} sospettamente piccolo"
+
+
 def main(nomi):
     scelti = [c for c in CONTROLLI if not nomi or c.__name__ in nomi]
     falliti = 0

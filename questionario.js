@@ -173,6 +173,22 @@ async function inviaRisposteRaccolte(){
   box.innerHTML = `<div class="card"><p>Risposta inviata. Grazie!</p></div>`;
 }
 
+// Testo che finisce dentro l'HTML della pagina: le domande e le istruzioni
+// arrivano dal database, non si fidano ciecamente.
+function esc(t){
+  return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// "2,5" e "2.5" valgono uguale. Restituisce un numero nel campo della scala
+// oppure null se il testo è vuoto, non è un numero o esce dal campo.
+function leggiNumeroScala(testo, opzioni){
+  const t = String(testo).trim().replace(',', '.');
+  if (t === '' || !/^\d+(\.\d+)?$/.test(t)) return null;
+  const n = Number(t);
+  if (!isFinite(n) || n < opzioni.min || n > opzioni.max) return null;
+  return n;
+}
+
 function renderDomanda(){
   const box = document.getElementById('questionario');
   const { domande, indice } = statoQuestionario;
@@ -193,18 +209,38 @@ function renderDomanda(){
   } else if (d.tipo === 'numero'){
     campo = `<input type="number" id="campoRisposta"><p><button class="btn primary" id="bAvanti">Avanti</button></p>`;
   } else if (d.tipo === 'scala_rpe' || d.tipo === 'scala_prs'){
-    const { min, max, ancore } = d.opzioni || { min: 0, max: 10, ancore: {} };
-    const bottoni = [];
-    for (let n = min; n <= max; n++) bottoni.push(`<button data-valore="${n}">${n}</button>`);
-    campo = `<div class="scala">${bottoni.join('')}</div>`;
-    if (ancore) campo += `<div class="ancora">${Object.entries(ancore).map(([n,t]) => `${n}: ${t}`).join(' · ')}</div>`;
+    // Le scale sono strumenti pubblicati: si mostra l'immagine originale del
+    // coach, senza ricostruirla, e si chiede il numero (anche decimale, anche
+    // oltre il 10 per la CR10) come da istruzioni per l'uso.
+    const o = d.opzioni || {};
+    const img = o.immagine ? `<img class="scalaImg" src="${esc(o.immagine)}" alt="${esc(o.alt || d.testo)}">` : '';
+    const istr = (o.istruzioni && o.istruzioni.length)
+      ? `<details class="istruzioni"><summary>Istruzioni per l'uso</summary>${o.istruzioni.map(t => `<p>${esc(t)}</p>`).join('')}</details>` : '';
+    campo = `${istr}${img}
+      <input type="text" inputmode="decimal" id="campoRisposta" autocomplete="off" placeholder="${esc(o.min)} – ${esc(o.max)}">
+      <p class="errore" id="erroreScala" hidden></p>
+      <p><button class="btn primary" id="bAvanti">Avanti</button></p>`;
   }
 
   box.innerHTML = `<div class="card"><p>${d.testo}</p>${campo}</div>`;
 
   box.querySelectorAll('[data-valore]').forEach(b => b.onclick = () => rispondi(b.dataset.valore));
   const bAvanti = document.getElementById('bAvanti');
-  if (bAvanti) bAvanti.onclick = () => rispondi(document.getElementById('campoRisposta').value);
+  if (bAvanti){
+    const eScala = d.tipo === 'scala_rpe' || d.tipo === 'scala_prs';
+    bAvanti.onclick = () => {
+      const testoCampo = document.getElementById('campoRisposta').value;
+      if (!eScala) return rispondi(testoCampo);
+      const n = leggiNumeroScala(testoCampo, d.opzioni || {});
+      if (n === null){
+        const e = document.getElementById('erroreScala');
+        e.textContent = `Inserisci un numero da ${d.opzioni.min} a ${d.opzioni.max} (anche con la virgola, es. 2,5).`;
+        e.hidden = false;
+        return;
+      }
+      rispondi(n);
+    };
+  }
 }
 
 function rispondi(valore){

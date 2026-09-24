@@ -14,6 +14,14 @@ Nessuna build: `index.html` + `questionario.js` sono script classici.
 Per lavorarci: `python -m http.server 8000` in questa cartella, poi apri
 `http://localhost:8000/?t=<un token valido>`.
 
+## Scale RPE e QGR10
+
+Le due scale sono strumenti pubblicati: la pagina mostra le immagini
+ORIGINALI del coach (`immagini/rpe_cr10.png`, `immagini/qgr10.png`,
+pagina 2 dei suoi PDF "istruzioni per l'uso"), non una ricostruzione. Non
+vanno ridisegnate né ritoccate: se il coach cambia scala, si sostituisce
+il file e si aggiorna la domanda sul database.
+
 ## Test
 
 ```
